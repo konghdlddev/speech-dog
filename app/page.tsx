@@ -94,6 +94,11 @@ export default function Home() {
   // แสดงสีเหลืองเมื่อมีการเลือก (คลิกหรือกดเล่น)
   const showHighlight = hasSelected;
 
+  // สำหรับ PlayerControls: ถ้า hasSelected แต่ playState ยังเป็น idle ให้ถือว่า "playing"
+  // เพื่อให้ปุ่มแสดงเป็น "หยุดชั่วคราว" ทันทีเมื่อคลิก seek
+  const effectivePlayState =
+    hasSelected && playState === "idle" ? "playing" : playState;
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
       <div className="w-full max-w-2xl space-y-8">
@@ -148,9 +153,9 @@ export default function Home() {
               disabled={!content.trim()}
             />
             <PlayerControls
-              playState={playState}
-              utteranceIndex={utteranceIndex}
-              totalUtterances={totalUtterances}
+              playState={effectivePlayState}
+              utteranceIndex={selectedIndex}
+              totalUtterances={utteranceChunks.length}
               onPlay={handlePlay}
               onPause={pause}
               onResume={resume}
