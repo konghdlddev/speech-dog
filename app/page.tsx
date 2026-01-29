@@ -3,6 +3,8 @@
 import { useCallback, useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { PlayerControls } from "@/components/PlayerControls";
+import { SeekBar } from "@/components/SeekBar";
+import { TextSegments } from "@/components/TextSegments";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { extractText } from "@/lib/extractText";
 
@@ -16,11 +18,13 @@ export default function Home() {
     playState,
     utteranceIndex,
     totalUtterances,
+    utteranceChunks,
     play,
     pause,
     resume,
     stop,
     restart,
+    playFromIndex,
   } = useSpeechSynthesis(content);
 
   const onFileSelect = useCallback(async (file: File) => {
@@ -83,11 +87,19 @@ export default function Home() {
                 ไฟล์: <span className="text-[var(--text)]">{fileName}</span>
               </p>
             )}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
-              <div className="max-h-64 overflow-y-auto p-4 text-[var(--text)] text-left whitespace-pre-wrap leading-relaxed">
-                {content}
-              </div>
-            </div>
+            <TextSegments
+              segments={utteranceChunks}
+              currentIndex={utteranceIndex}
+              playState={playState}
+              onSegmentClick={playFromIndex}
+            />
+            <SeekBar
+              totalSegments={utteranceChunks.length}
+              currentIndex={utteranceIndex}
+              playState={playState}
+              onSeek={playFromIndex}
+              disabled={!content.trim()}
+            />
             <PlayerControls
               playState={playState}
               utteranceIndex={utteranceIndex}

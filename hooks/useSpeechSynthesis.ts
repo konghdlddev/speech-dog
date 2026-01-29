@@ -1,10 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 const THAI_LANG = "th-TH";
 
 export type PlayState = "idle" | "playing" | "paused";
+
+function splitIntoUtterances(t: string): string[] {
+  const trimmed = t.trim();
+  if (!trimmed) return [];
+  const maxLen = 200;
+  const sentences = trimmed.split(/(?<=[.!?\n。．])|\n+/).filter(Boolean);
+  const chunks: string[] = [];
+  let current = "";
+  for (const s of sentences) {
+    if (current.length + s.length > maxLen && current) {
+      chunks.push(current.trim());
+      current = s;
+    } else {
+      current += (current ? " " : "") + s;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length ? chunks : [trimmed];
+}
 
 export function useSpeechSynthesis(text: string) {
   const [playState, setPlayState] = useState<PlayState>("idle");
@@ -14,24 +34,12 @@ export function useSpeechSynthesis(text: string) {
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
   const currentUtteranceRef = useRef<number>(0);
 
-  const splitIntoUtterances = useCallback((t: string): string[] => {
-    const trimmed = t.trim();
-    if (!trimmed) return [];
-    const maxLen = 200;
-    const sentences = trimmed.split(/(?<=[.!?\n。．])|\n+/).filter(Boolean);
-    const chunks: string[] = [];
-    let current = "";
-    for (const s of sentences) {
-      if (current.length + s.length > maxLen && current) {
-        chunks.push(current.trim());
-        current = s;
-      } else {
-        current += (current ? " " : "") + s;
-      }
-    }
-    if (current.trim()) chunks.push(current.trim());
-    return chunks.length ? chunks : [trimmed];
-  }, []);
+  const utteranceChunks = useMemo(() => splitIntoUtterances(text), [text]);
+
+  const getChunks = useCallback(() => {
+    const t = text.trim();
+    return t ? utteranceChunks : [];
+  }, [text, utteranceChunks]);
 
   const getThaiVoice = useCallback((): SpeechSynthesisVoice | null => {
     if (typeof window === "undefined") return null;
@@ -77,11 +85,10 @@ export function useSpeechSynthesis(text: string) {
 
   const play = useCallback(() => {
     if (typeof window === "undefined") return;
-    const t = text.trim();
-    if (!t) return;
+    const chunks = getChunks();
+    if (!chunks.length) return;
 
     window.speechSynthesis.cancel();
-    const chunks = splitIntoUtterances(t);
     utterancesRef.current = chunks.map(
       (c) => new SpeechSynthesisUtterance(c)
     );
@@ -91,7 +98,30 @@ export function useSpeechSynthesis(text: string) {
     setPlayState("playing");
     synthRef.current = window.speechSynthesis;
     speakNext();
-  }, [text, splitIntoUtterances, speakNext]);
+  }, [getChunks, speakNext]);
+
+  const playFromIndex = useCallback(
+    (index: number) => {
+      if (typeof window === "undefined") return;
+      const chunks = getChunks();
+      if (!chunks.length || index < 0 || index >= chunks.length) return;
+
+      window.speechSynthesis.cancel();
+      utterancesRef.current = chunks.map(
+        (c) => new SpeechSynthesisUtterance(c)
+      );
+      currentUtteranceRef.current = index;
+      // บังคับอัปเดต UI ทันที เพื่อให้ tab / progress แสดงช่วงที่เลือกก่อนเริ่มเล่น
+      flushSync(() => {
+        setUtteranceIndex(index);
+        setTotalUtterances(chunks.length);
+        setPlayState("playing");
+      });
+      synthRef.current = window.speechSynthesis;
+      speakNext();
+    },
+    [getChunks, speakNext]
+  );
 
   const pause = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -134,10 +164,12 @@ export function useSpeechSynthesis(text: string) {
     playState,
     utteranceIndex,
     totalUtterances,
+    utteranceChunks,
     play,
     pause,
     resume,
     stop,
     restart,
+    playFromIndex,
   };
 }
