@@ -5,21 +5,21 @@ import { useLayoutEffect, useRef } from "react";
 type Props = {
   segments: string[];
   currentIndex: number;
-  playState: "idle" | "playing" | "paused";
+  showHighlight: boolean;
   onSegmentClick: (index: number) => void;
 };
 
 export function TextSegments({
   segments,
   currentIndex,
-  playState,
+  showHighlight,
   onSegmentClick,
 }: Props) {
   const activeRef = useRef<HTMLParagraphElement>(null);
 
   // เลื่อนให้ช่วงที่กำลังอ่านอยู่โผล่ใน view ทันที (รวมตอนคลิก seek)
   useLayoutEffect(() => {
-    if (playState !== "playing" && playState !== "paused") return;
+    if (!showHighlight) return;
     requestAnimationFrame(() => {
       activeRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -27,16 +27,15 @@ export function TextSegments({
         inline: "nearest",
       });
     });
-  }, [currentIndex, playState]);
+  }, [currentIndex, showHighlight]);
 
   if (!segments.length) return null;
 
   return (
     <div className="max-h-72 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 space-y-2">
       {segments.map((chunk, i) => {
-        const isPlayingOrPaused = playState === "playing" || playState === "paused";
-        const isActive = isPlayingOrPaused && i === currentIndex;
-        const isPast = isPlayingOrPaused && i < currentIndex;
+        const isActive = showHighlight && i === currentIndex;
+        const isPast = showHighlight && i < currentIndex;
         return (
           <div key={i} className="flex gap-2 items-start">
             {/* แถบเหลืองเฉพาะช่วงที่กำลังอ่านอยู่ ช่วงอื่นเป็นสีเทา */}

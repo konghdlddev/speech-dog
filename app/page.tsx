@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { PlayerControls } from "@/components/PlayerControls";
 import { SeekBar } from "@/components/SeekBar";
@@ -13,6 +13,10 @@ export default function Home() {
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  /** ใช้เป็น "selected" ช่วงที่จะแสดง (รวมตอนคลิกและตอนเล่น) */
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  /** แสดงว่ามีการคลิกเลือกช่วงแล้ว (รวมกดเล่น) */
+  const [hasSelected, setHasSelected] = useState(false);
 
   const {
     playState,
@@ -26,6 +30,20 @@ export default function Home() {
     restart,
     playFromIndex,
   } = useSpeechSynthesis(content);
+
+  // sync selectedIndex กับ utteranceIndex เมื่อ speech เล่นไป
+  useEffect(() => {
+    if (playState === "playing" || playState === "paused") {
+      setSelectedIndex(utteranceIndex);
+      setHasSelected(true);
+    }
+  }, [utteranceIndex, playState]);
+
+  // เคลียร์เมื่อเปลี่ยนไฟล์
+  useEffect(() => {
+    setSelectedIndex(0);
+    setHasSelected(false);
+  }, [content]);
 
   const onFileSelect = useCallback(async (file: File) => {
     setError("");
@@ -47,6 +65,35 @@ export default function Home() {
     setError(message);
   }, []);
 
+  const handleSeek = useCallback(
+    (index: number) => {
+      setSelectedIndex(index);
+      setHasSelected(true);
+      playFromIndex(index);
+    },
+    [playFromIndex]
+  );
+
+  const handlePlay = useCallback(() => {
+    setHasSelected(true);
+    play();
+  }, [play]);
+
+  const handleStop = useCallback(() => {
+    setHasSelected(false);
+    setSelectedIndex(0);
+    stop();
+  }, [stop]);
+
+  const handleRestart = useCallback(() => {
+    setSelectedIndex(0);
+    setHasSelected(true);
+    restart();
+  }, [restart]);
+
+  // แสดงสีเหลืองเมื่อมีการเลือก (คลิกหรือกดเล่น)
+  const showHighlight = hasSelected;
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
       <div className="w-full max-w-2xl space-y-8">
@@ -55,7 +102,7 @@ export default function Home() {
             Speech Dog
           </h1>
           <p className="mt-2 text-[var(--muted)]">
-            อัปโหลดเอกสาร แล้วให้ AI อ่านออกเสียง รองรับภาษาไทย
+            อัปโหลดเอกสาร แล้วให้ AI อ่านออกเสียง รองรับภาษาไทย by Konghdld
           </p>
         </header>
 
@@ -89,26 +136,26 @@ export default function Home() {
             )}
             <TextSegments
               segments={utteranceChunks}
-              currentIndex={utteranceIndex}
-              playState={playState}
-              onSegmentClick={playFromIndex}
+              currentIndex={selectedIndex}
+              showHighlight={showHighlight}
+              onSegmentClick={handleSeek}
             />
             <SeekBar
               totalSegments={utteranceChunks.length}
-              currentIndex={utteranceIndex}
-              playState={playState}
-              onSeek={playFromIndex}
+              currentIndex={selectedIndex}
+              showHighlight={showHighlight}
+              onSeek={handleSeek}
               disabled={!content.trim()}
             />
             <PlayerControls
               playState={playState}
               utteranceIndex={utteranceIndex}
               totalUtterances={totalUtterances}
-              onPlay={play}
+              onPlay={handlePlay}
               onPause={pause}
               onResume={resume}
-              onStop={stop}
-              onRestart={restart}
+              onStop={handleStop}
+              onRestart={handleRestart}
               disabled={!content.trim()}
             />
           </section>

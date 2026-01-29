@@ -2,12 +2,10 @@
 
 import { useCallback, useRef } from "react";
 
-type PlayState = "idle" | "playing" | "paused";
-
 type Props = {
   totalSegments: number;
   currentIndex: number;
-  playState: PlayState;
+  showHighlight: boolean;
   onSeek: (index: number) => void;
   disabled?: boolean;
 };
@@ -15,13 +13,11 @@ type Props = {
 export function SeekBar({
   totalSegments,
   currentIndex,
-  playState,
+  showHighlight,
   onSeek,
   disabled,
 }: Props) {
   const barRef = useRef<HTMLDivElement>(null);
-
-  const isActive = playState === "playing" || playState === "paused";
   const playedPercent =
     totalSegments > 0 ? (currentIndex / totalSegments) * 100 : 0;
   const segmentWidthPercent = totalSegments > 0 ? 100 / totalSegments : 0;
@@ -70,7 +66,7 @@ export function SeekBar({
             style={{ width: `${playedPercent}%` }}
           />
           {/* สีเหลืองเฉพาะช่วงที่กำลังอ่านอยู่ */}
-          {isActive && (
+          {showHighlight && (
             <div
               className="absolute top-0 bottom-0 rounded-full bg-amber-400 transition-all duration-150 z-[2]"
               style={{
