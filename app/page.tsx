@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
+import { GeminiTTS } from "@/components/GeminiTTS";
 import { PlayerControls } from "@/components/PlayerControls";
 import { SeekBar } from "@/components/SeekBar";
 import { TextSegments } from "@/components/TextSegments";
+import { TTSModeTabs, type TTSMode } from "@/components/TTSModeTabs";
+import { VoiceSelector } from "@/components/VoiceSelector";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { extractText } from "@/lib/extractText";
 
@@ -13,16 +16,28 @@ export default function Home() {
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  /** ใช้เป็น "selected" ช่วงที่จะแสดง (รวมตอนคลิกและตอนเล่น) */
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  /** แสดงว่ามีการคลิกเลือกช่วงแล้ว (รวมกดเล่น) */
-  const [hasSelected, setHasSelected] = useState(false);
+
+  // TTS mode
+  const [ttsMode, setTtsMode] = useState<TTSMode>("browser");
+
+  // Browser TTS state
+  const [browserSelectedIndex, setBrowserSelectedIndex] = useState(0);
+  const [browserHasSelected, setBrowserHasSelected] = useState(false);
+
+  // Gemini TTS state
+  const [geminiSelectedIndex, setGeminiSelectedIndex] = useState(0);
+  const [geminiHasSelected, setGeminiHasSelected] = useState(false);
+  const [geminiPlaying, setGeminiPlaying] = useState(false);
 
   const {
     playState,
     utteranceIndex,
-    totalUtterances,
     utteranceChunks,
+    voices,
+    selectedVoiceId,
+    setSelectedVoiceId,
+    rate,
+    setRate,
     play,
     pause,
     resume,
@@ -31,19 +46,36 @@ export default function Home() {
     playFromIndex,
   } = useSpeechSynthesis(content);
 
-  // sync selectedIndex กับ utteranceIndex เมื่อ speech เล่นไป
+  // sync browserSelectedIndex กับ utteranceIndex เมื่อ speech เล่นไป
   useEffect(() => {
     if (playState === "playing" || playState === "paused") {
-      setSelectedIndex(utteranceIndex);
-      setHasSelected(true);
+      setBrowserSelectedIndex(utteranceIndex);
+      setBrowserHasSelected(true);
     }
   }, [utteranceIndex, playState]);
 
   // เคลียร์เมื่อเปลี่ยนไฟล์
   useEffect(() => {
-    setSelectedIndex(0);
-    setHasSelected(false);
+    setBrowserSelectedIndex(0);
+    setBrowserHasSelected(false);
+    setGeminiSelectedIndex(0);
+    setGeminiHasSelected(false);
   }, [content]);
+
+  // หยุด TTS อีกโหมดเมื่อสลับ mode
+  const handleModeChange = useCallback(
+    (mode: TTSMode) => {
+      if (mode !== ttsMode) {
+        // หยุดโหมดปัจจุบัน
+        if (ttsMode === "browser") {
+          stop();
+          setBrowserHasSelected(false);
+        }
+        setTtsMode(mode);
+      }
+    },
+    [ttsMode, stop],
+  );
 
   const onFileSelect = useCallback(async (file: File) => {
     setError("");
@@ -65,39 +97,50 @@ export default function Home() {
     setError(message);
   }, []);
 
-  const handleSeek = useCallback(
+  // Browser TTS handlers
+  const handleBrowserSeek = useCallback(
     (index: number) => {
-      setSelectedIndex(index);
-      setHasSelected(true);
+      setBrowserSelectedIndex(index);
+      setBrowserHasSelected(true);
       playFromIndex(index);
     },
-    [playFromIndex]
+    [playFromIndex],
   );
 
-  const handlePlay = useCallback(() => {
-    setHasSelected(true);
+  const handleBrowserPlay = useCallback(() => {
+    setBrowserHasSelected(true);
     play();
   }, [play]);
 
-  const handleStop = useCallback(() => {
-    setHasSelected(false);
-    setSelectedIndex(0);
+  const handleBrowserStop = useCallback(() => {
+    setBrowserHasSelected(false);
+    setBrowserSelectedIndex(0);
     stop();
   }, [stop]);
 
-  const handleRestart = useCallback(() => {
-    setSelectedIndex(0);
-    setHasSelected(true);
+  const handleBrowserRestart = useCallback(() => {
+    setBrowserSelectedIndex(0);
+    setBrowserHasSelected(true);
     restart();
   }, [restart]);
 
-  // แสดงสีเหลืองเมื่อมีการเลือก (คลิกหรือกดเล่น)
-  const showHighlight = hasSelected;
+  // Gemini TTS handlers
+  const handleGeminiSeek = useCallback((index: number) => {
+    setGeminiSelectedIndex(index);
+    setGeminiHasSelected(true);
+  }, []);
 
-  // สำหรับ PlayerControls: ถ้า hasSelected แต่ playState ยังเป็น idle ให้ถือว่า "playing"
-  // เพื่อให้ปุ่มแสดงเป็น "หยุดชั่วคราว" ทันทีเมื่อคลิก seek
+  // Current mode values
+  const selectedIndex =
+    ttsMode === "browser" ? browserSelectedIndex : geminiSelectedIndex;
+  const showHighlight =
+    ttsMode === "browser" ? browserHasSelected : geminiHasSelected;
+
   const effectivePlayState =
-    hasSelected && playState === "idle" ? "playing" : playState;
+    browserHasSelected && playState === "idle" ? "playing" : playState;
+
+  const isPlaying =
+    ttsMode === "browser" ? playState === "playing" : geminiPlaying;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
@@ -107,7 +150,7 @@ export default function Home() {
             Speech Dog
           </h1>
           <p className="mt-2 text-[var(--muted)]">
-            อัปโหลดเอกสาร แล้วให้ AI อ่านออกเสียง รองรับภาษาไทย by Konghdld
+            อัปโหลดเอกสาร แล้วให้ AI อ่านออกเสียง รองรับภาษาไทย
           </p>
         </header>
 
@@ -139,29 +182,92 @@ export default function Home() {
                 ไฟล์: <span className="text-[var(--text)]">{fileName}</span>
               </p>
             )}
-            <TextSegments
-              segments={utteranceChunks}
-              currentIndex={selectedIndex}
-              showHighlight={showHighlight}
-              onSegmentClick={handleSeek}
-            />
+
+            {/* Seek Bar */}
             <SeekBar
               totalSegments={utteranceChunks.length}
               currentIndex={selectedIndex}
               showHighlight={showHighlight}
-              onSeek={handleSeek}
+              onSeek={
+                ttsMode === "browser" ? handleBrowserSeek : handleGeminiSeek
+              }
               disabled={!content.trim()}
             />
-            <PlayerControls
-              playState={effectivePlayState}
-              utteranceIndex={selectedIndex}
-              totalUtterances={utteranceChunks.length}
-              onPlay={handlePlay}
-              onPause={pause}
-              onResume={resume}
-              onStop={handleStop}
-              onRestart={handleRestart}
-              disabled={!content.trim()}
+
+            {/* TTS Mode Tabs */}
+            <TTSModeTabs
+              activeMode={ttsMode}
+              onModeChange={handleModeChange}
+              disabled={isPlaying}
+            />
+
+            {/* Browser TTS Controls */}
+            {ttsMode === "browser" && (
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-cyan-400 font-medium text-sm">
+                    🔊 Browser TTS
+                  </span>
+                  <span className="text-xs text-[var(--muted)]">
+                    (ใช้เสียงจาก Browser/OS)
+                  </span>
+                </div>
+                <VoiceSelector
+                  voices={voices}
+                  selectedVoiceId={selectedVoiceId}
+                  onVoiceChange={setSelectedVoiceId}
+                  rate={rate}
+                  onRateChange={setRate}
+                  disabled={playState === "playing"}
+                />
+                <PlayerControls
+                  playState={effectivePlayState}
+                  utteranceIndex={browserSelectedIndex}
+                  totalUtterances={utteranceChunks.length}
+                  onPlay={handleBrowserPlay}
+                  onPause={pause}
+                  onResume={resume}
+                  onStop={handleBrowserStop}
+                  onRestart={handleBrowserRestart}
+                  disabled={!content.trim()}
+                />
+              </div>
+            )}
+
+            {/* Gemini TTS Controls */}
+            {ttsMode === "gemini" && (
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-purple-400 font-medium text-sm">
+                    ✨ Gemini AI TTS
+                  </span>
+                  <span className="text-xs text-[var(--muted)]">
+                    (เสียง AI คุณภาพสูง)
+                  </span>
+                </div>
+                <GeminiTTS
+                  segments={utteranceChunks}
+                  currentIndex={geminiSelectedIndex}
+                  onIndexChange={setGeminiSelectedIndex}
+                  onPlayStateChange={(playing) => {
+                    setGeminiPlaying(playing);
+                    if (playing) {
+                      setGeminiHasSelected(true);
+                    }
+                  }}
+                  onHighlightChange={setGeminiHasSelected}
+                />
+              </div>
+            )}
+
+            {/* Text Segments */}
+            <TextSegments
+              segments={utteranceChunks}
+              currentIndex={selectedIndex}
+              showHighlight={showHighlight}
+              onSegmentClick={
+                ttsMode === "browser" ? handleBrowserSeek : handleGeminiSeek
+              }
             />
           </section>
         )}

@@ -7,6 +7,13 @@ const THAI_LANG = "th-TH";
 
 export type PlayState = "idle" | "playing" | "paused";
 
+export interface VoiceOption {
+  id: string;
+  name: string;
+  lang: string;
+  isDefault: boolean;
+}
+
 function splitIntoUtterances(t: string): string[] {
   const trimmed = t.trim();
   if (!trimmed) return [];
@@ -30,6 +37,9 @@ export function useSpeechSynthesis(text: string) {
   const [playState, setPlayState] = useState<PlayState>("idle");
   const [utteranceIndex, setUtteranceIndex] = useState(0);
   const [totalUtterances, setTotalUtterances] = useState(0);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
+  const [rate, setRate] = useState(0.95);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
   const currentUtteranceRef = useRef<number>(0);
@@ -41,12 +51,35 @@ export function useSpeechSynthesis(text: string) {
     return t ? utteranceChunks : [];
   }, [text, utteranceChunks]);
 
-  const getThaiVoice = useCallback((): SpeechSynthesisVoice | null => {
-    if (typeof window === "undefined") return null;
-    const voices = window.speechSynthesis.getVoices();
-    const thai = voices.find((v) => v.lang === THAI_LANG || v.lang.startsWith("th"));
-    return thai ?? voices[0] ?? null;
-  }, []);
+  // โหลดรายการเสียงที่ available
+  const loadVoices = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const rawVoices = window.speechSynthesis.getVoices();
+    const voiceOptions: VoiceOption[] = rawVoices.map((v, i) => ({
+      id: `${v.name}-${v.lang}-${i}`,
+      name: v.name,
+      lang: v.lang,
+      isDefault: v.default,
+    }));
+    setVoices(voiceOptions);
+    
+    // เลือก Thai voice เป็น default ถ้ามี
+    if (!selectedVoiceId && voiceOptions.length > 0) {
+      const thaiVoice = voiceOptions.find(
+        (v) => v.lang === THAI_LANG || v.lang.startsWith("th")
+      );
+      setSelectedVoiceId(thaiVoice?.id ?? voiceOptions[0]?.id ?? null);
+    }
+  }, [selectedVoiceId]);
+
+  // หา SpeechSynthesisVoice จาก selectedVoiceId
+  const getSelectedVoice = useCallback((): SpeechSynthesisVoice | null => {
+    if (typeof window === "undefined" || !selectedVoiceId) return null;
+    const rawVoices = window.speechSynthesis.getVoices();
+    const selected = voices.find((v) => v.id === selectedVoiceId);
+    if (!selected) return rawVoices[0] ?? null;
+    return rawVoices.find((v) => v.name === selected.name && v.lang === selected.lang) ?? rawVoices[0] ?? null;
+  }, [selectedVoiceId, voices]);
 
   const speakNext = useCallback(() => {
     const synth = window.speechSynthesis;
@@ -62,10 +95,14 @@ export function useSpeechSynthesis(text: string) {
     }
 
     const utterance = list[idx];
-    const voice = getThaiVoice();
-    if (voice) utterance.voice = voice;
-    utterance.lang = THAI_LANG;
-    utterance.rate = 0.95;
+    const voice = getSelectedVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      utterance.lang = THAI_LANG;
+    }
+    utterance.rate = rate;
     utterance.pitch = 1;
 
     utterance.onend = () => {
@@ -81,7 +118,7 @@ export function useSpeechSynthesis(text: string) {
     };
 
     synth.speak(utterance);
-  }, [getThaiVoice]);
+  }, [getSelectedVoice, rate]);
 
   const play = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -150,21 +187,23 @@ export function useSpeechSynthesis(text: string) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const loadVoices = () => {
-      window.speechSynthesis.getVoices();
-    };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
     return () => {
       window.speechSynthesis.cancel();
     };
-  }, []);
+  }, [loadVoices]);
 
   return {
     playState,
     utteranceIndex,
     totalUtterances,
     utteranceChunks,
+    voices,
+    selectedVoiceId,
+    setSelectedVoiceId,
+    rate,
+    setRate,
     play,
     pause,
     resume,
